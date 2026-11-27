@@ -53,5 +53,25 @@ function renderPauseReview() {
   }
 }
 function buyWish(id){const w=data.wishes.find(w=>w.id===id);if(!w)return;if(Date.now()-w.created<86400000){toast('还没满24小时，明天再决定');return}if(!confirm('确定购买？将自动记为今天的购物支出。'))return;data.records.push({id:uid(),type:'expense',amount:w.price,category:'购物',date:today(),note:w.name});data.wishes=data.wishes.filter(x=>x.id!==id);persist();render();toast('购买已记账')}function renderWishes(){renderPauseReview();const ws=data.wishes.filter(w=>!w.skipped).sort((a,b)=>b.created-a.created);document.getElementById('wishes').innerHTML=ws.length?ws.map(w=>{const h=Math.max(0,Math.ceil((86400000-(Date.now()-w.created))/3600000));return '<div class="listrow"><div class="ico">♡</div><div class="grow"><div class="name">'+esc(w.name)+'</div><div class="meta">'+(w.mood?esc(w.mood)+' · ':'')+(h?'冷静期还剩约 '+h+' 小时':'已满24小时，可以重新考虑')+'</div><div class="actions"><button onclick="removeWish(\''+esc(w.id)+'\')">不买了</button><button onclick="buyWish(\''+esc(w.id)+'\')">决定购买并记账</button></div></div><b>'+money(w.price)+'</b></div>'}).join(''):'<div class="empty">还没有想买的东西。先等等，再决定 ✨</div>'}function download(content,name,mime){const blob=new Blob([content],{type:mime}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000)}function exportJSON(){download(JSON.stringify({version:1,exportedAt:new Date().toISOString(),...data},null,2),'有度记账-完整备份-'+today()+'.json','application/json');toast('备份文件已生成')}function exportCSV(){const lines=[['日期','类型','分类','金额','备注'],...sorted(data.records).map(r=>[r.date,r.type==='expense'?'支出':'收入',r.category,r.amount,r.note])];download('\ufeff'+lines.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n'),'有度记账-账单-'+today()+'.csv','text/csv;charset=utf-8');toast('CSV 已生成')}function validateImport(x){if(!x||x.version!==1||!Number.isFinite(x.budget)||x.budget<=0||x.budget>999999999||!Array.isArray(x.records)||!Array.isArray(x.wishes)||x.records.length>100000||x.wishes.length>100000)return false;return x.records.every(r=>r&&typeof r.id==='string'&&/^[A-Za-z0-9_-]{1,149}$/.test(r.id)&&['expense','income'].includes(r.type)&&Number.isFinite(r.amount)&&r.amount>0&&r.amount<=999999999&&typeof r.category==='string'&&r.category.length<100&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&typeof r.note==='string'&&r.note.length<=1000)&&x.wishes.every(w=>w&&typeof w.id==='string'&&/^[A-Za-z0-9_-]{1,149}$/.test(w.id)&&typeof w.name==='string'&&w.name.length<200&&Number.isFinite(w.price)&&w.price>0&&w.price<=999999999&&Number.isFinite(w.created))}async function importJSON(ev){const file=ev.target.files?.[0];ev.target.value='';if(!file)return;if(file.size>12000000){toast('备份文件过大');return}try{const x=JSON.parse(await file.text());if(!validateImport(x)){toast('备份文件格式不正确');return}if(!confirm('导入将替换当前所有账目和想买清单，建议先导出备份。确定继续？'))return;const old=data;data={budget:x.budget,records:x.records,wishes:x.wishes};if(!persist()){data=old;return}document.getElementById('filterMonth').value=month();render();toast('恢复成功 ✓')}catch(e){toast('无法读取该备份文件')}}function clearData(){if(!confirm('将永久清空当前浏览器中的所有账目，确定继续？'))return;if(!confirm('最后确认：是否已导出备份？'))return;data={budget:2000,records:[],wishes:[]};persist();resetForm();render();toast('数据已清空')}document.getElementById('date').value=today();document.getElementById('filterMonth').value=month();setType('expense');render();document.addEventListener('visibilitychange',()=>{if(!document.hidden)render()});
+</script><script>
+(() => {
+  if (!location.hash.startsWith('#add=')) return;
+  let entries;
+  try {
+    entries = JSON.parse(decodeURIComponent(location.hash.slice(5)));
+    if (!Array.isArray(entries) || !entries.length || entries.length > 50) return;
+    for (const [id,date,cents,note] of entries) {
+      if (!/^[a-z0-9-]{1,80}$/.test(id) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isSafeInteger(cents) || cents<=0 || cents>99999999900 || typeof note!=='string' || note.length>100) return;
+    }
+  } catch { return; }
+  const fresh = load();
+  const pending=entries.filter(([id])=>!fresh.records.some(r=>r.id===id));
+  if (!pending.length) {history.replaceState(null,'',location.pathname);toast('这些记录已经保存');return;}
+  if (!confirm('将以下餐饮支出追加到当前账本？\n\n'+pending.map(([,date,cents,note])=>date+'　'+money(cents/100)+'　'+note).join('\n'))) return;
+  data=fresh;
+  for (const [id,date,cents,note] of pending) if (!data.records.some(r=>r.id===id)) data.records.push({id,date,amount:cents/100,note,type:'expense',category:'餐饮'});
+  if(persist()){history.replaceState(null,'',location.pathname);document.getElementById('filterMonth').value=pending[0][1].slice(0,7);render();go('records');toast('已保存到当前账本');}
+})();
 </script></body></html>
+
 
